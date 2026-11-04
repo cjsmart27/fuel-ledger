@@ -16,7 +16,7 @@ const fmt = n => r0(n).toLocaleString();
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
 /* ================= storage ================= */
-function blank(){ return { targets: null, foods: {}, days: {}, settings: { usdaKey: "", lastBackup: 0, hideInstall: false } }; }
+function blank(){ return { targets: null, profiles: [], activeProfile: null, foods: {}, days: {}, settings: { usdaKey: "", lastBackup: 0, hideInstall: false } }; }
 function load(){
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
@@ -444,6 +444,13 @@ function showSettings(){
     '<h3>Settings</h3>'
     + '<form class="stack" id="tForm" novalidate>'
     + '<h4>Daily targets</h4>'
+    + (DB.profiles && DB.profiles.length
+        ? '<div class="field"><label>Saved profiles</label><div class="seg" role="group" aria-label="Saved profiles">'
+          + DB.profiles.map(p => '<button type="button" data-act="apply-profile" data-id="'+esc(p.id)+'" aria-pressed="'+(DB.activeProfile===p.id)+'">'+esc(p.name)+'</button>').join("")
+          + '</div></div>'
+        : '')
+    + '<button class="btn" type="button" data-act="open-calc">'+(DB.profiles && DB.profiles.length ? 'Recalculate my targets' : 'Calculate my targets')+'</button>'
+    + '<p class="hint">Answer a few questions about your body and activity, or type your own numbers below.</p>'
     + '<div class="field"><label for="tK">Calories</label><input id="tK" inputmode="numeric" value="'+(g.kcal||"")+'"></div>'
     + '<div class="row2"><div class="field"><label for="tP">Protein (g)</label><input id="tP" inputmode="numeric" value="'+(g.p||"")+'"></div>'
     + '<div class="field"><label for="tC">Carbs (g)</label><input id="tC" inputmode="numeric" value="'+(g.c||"")+'"></div></div>'
@@ -463,12 +470,18 @@ function showSettings(){
   const hint = () => {
     const p=num($("tP").value), c=num($("tC").value), f=num($("tF").value), k=num($("tK").value);
     const m = r0(p*4 + c*4 + f*9);
-    $("tHint").textContent = m ? "Your macros add up to " + fmt(m) + " kcal" + (k ? " (" + (m>=k ? fmt(m-k)+" above" : fmt(k-m)+" below") + " your calorie target)." : ".") : "Protein and carbs are 4 kcal per gram, fat is 9.";
+    const diff = m - k;
+    $("tHint").textContent = !m ? "Protein and carbs are 4 kcal per gram, fat is 9."
+      : !k ? "Your macros add up to " + fmt(m) + " kcal."
+      : Math.abs(diff) <= 10 ? "Your macros add up to " + fmt(m) + " kcal, matching your calorie target."
+      : "Your macros add up to " + fmt(m) + " kcal (" + fmt(Math.abs(diff)) + (diff > 0 ? " above" : " below") + " your calorie target).";
   };
   ["tK","tP","tC","tF"].forEach(id => $(id).addEventListener("input", hint)); hint();
   $("tForm").addEventListener("submit", ev => {
     ev.preventDefault();
     const t = { kcal: r0(num($("tK").value)), p: r0(num($("tP").value)), c: r0(num($("tC").value)), f: r0(num($("tF").value)) };
+    const prev = DB.targets || {};
+    if (t.kcal !== prev.kcal || t.p !== prev.p || t.c !== prev.c || t.f !== prev.f) DB.activeProfile = null;   // hand-edited numbers no longer match a profile
     DB.targets = t.kcal || t.p || t.c || t.f ? t : null;
     DB.settings.usdaKey = $("uKey").value.trim();
     save(); closeSheet(); render(); toast("Settings saved");
@@ -504,6 +517,154 @@ $("importInput").addEventListener("change", async e => {
     openSheet('<h3>That file isn\'t a backup</h3><p class="lead">Choose a file named like fuel-ledger-backup-2026-11-03.json, saved from this app\'s Settings.</p><button class="btn" type="button" data-act="close" style="width:100%">OK</button>');
   }
 });
+
+/* --- target calculator --- */
+// MET values from the Compendium of Physical Activities. Net cost = (MET - 1) x kg x hours,
+// because resting burn is already counted in the baseline.
+const CARDIO = {
+  walk: ["Brisk walking", 4.3], run: ["Running", 9.8], bike: ["Cycling", 7], ellip: ["Elliptical", 5],
+  stair: ["Stair climber", 9], row: ["Rowing", 7], swim: ["Swimming", 6], hiit: ["HIIT class", 8], sport: ["Basketball or other sports", 6.5]
+};
+const ON_FEET = {
+  sit: ["Mostly sitting", 4000], some: ["On my feet some", 7000], most: ["On my feet most of the day", 11000], phys: ["Physical job, walking all day", 15000]
+};
+const GOALS = {
+  cut: { label: "Lose fat", paces: { slow: [-0.10, "Steady"], fast: [-0.20, "Faster"] }, protein: 1.0 },
+  maintain: { label: "Maintain", paces: null, protein: 0.8 },
+  bulk: { label: "Build muscle", paces: { slow: [0.05, "Lean"], fast: [0.10, "Faster"] }, protein: 0.9 }
+};
+function defaultCalc(){
+  return { name: "My targets", sex: "m", age: "", ft: "", inch: "", lb: "", stepsMode: "est", steps: "", onFeet: "some",
+           liftDays: 4, liftMin: 60, liftHard: true, cardio: [], goal: "maintain", pace: "slow" };
+}
+function computeTargets(x){
+  const age = num(x.age), lb = num(x.lb), heightIn = num(x.ft) * 12 + num(x.inch);
+  if (!age || !lb || !heightIn) return null;
+  const kg = lb * 0.4536, cm = heightIn * 2.54;
+  const resting = 10*kg + 6.25*cm - 5*age + (x.sex === "f" ? -161 : 5);       // Mifflin-St Jeor
+  const living = resting * 0.2;                                                // basic daily living + digesting food
+  const steps = x.stepsMode === "known" ? num(x.steps) : ON_FEET[x.onFeet][1];
+  const stepsK = Math.max(0, steps - 3000) * lb * 0.0002;                      // ~0.4 kcal per lb per mile, 2,000 steps a mile
+  const liftK = (x.liftHard ? 5 : 2.5) * kg * (num(x.liftMin) / 60) * num(x.liftDays) / 7;
+  const cardioK = (x.cardio || []).reduce((s, c) => s + ((CARDIO[c.type] || CARDIO.walk)[1] - 1) * kg * (num(c.min) / 60), 0) / 7;
+  const maintenance = resting + living + stepsK + liftK + cardioK;
+  const goal = GOALS[x.goal] || GOALS.maintain;
+  const pct = goal.paces ? goal.paces[x.pace in goal.paces ? x.pace : "slow"][0] : 0;
+  let kcal = maintenance * (1 + pct), floored = false;
+  if (kcal < resting) { kcal = resting; floored = true; }
+  kcal = Math.round(kcal / 10) * 10;
+  const p = Math.min(Math.round(lb * goal.protein), Math.round(kcal * 0.35 / 4));
+  const f = Math.max(Math.round(kcal * 0.27 / 9), Math.round(lb * 0.3));
+  const c = Math.max(0, Math.round((kcal - p*4 - f*9) / 4));
+  return { kcal, p, c, f, floored, pct,
+    parts: { resting: r0(resting), living: r0(living), steps: r0(stepsK), lifting: r0(liftK), cardio: r0(cardioK), maintenance: r0(maintenance), adjust: r0(kcal - maintenance) } };
+}
+function showCalculator(prefill){
+  const x = { ...defaultCalc(), ...(DB.settings.calcInputs || {}), ...(prefill || {}) };
+  x.cardio = (x.cardio || []).map(c => ({ ...c }));
+  const seg = (key, opts) => '<div class="seg" role="group">' + opts.map(([v, l]) => '<button type="button" data-calc="'+key+'" data-v="'+v+'" aria-pressed="'+(String(x[key])===String(v))+'">'+esc(l)+'</button>').join("") + '</div>';
+  const inp = (id, key, label, ph) => '<div class="field"><label for="'+id+'">'+label+'</label><input id="'+id+'" data-key="'+key+'" inputmode="decimal" value="'+esc(x[key])+'" placeholder="'+(ph||"")+'"></div>';
+  const cardioRows = () => x.cardio.map((c, i) => '<div class="row2" style="grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto;align-items:end">'
+      + '<div class="field"><label for="ct'+i+'">Cardio</label><select id="ct'+i+'" data-cardio="'+i+'" data-f="type">'
+      + Object.entries(CARDIO).map(([k, v]) => '<option value="'+k+'"'+(c.type===k?' selected':'')+'>'+v[0]+'</option>').join("") + '</select></div>'
+      + '<div class="field"><label for="cm'+i+'">Minutes / week</label><input id="cm'+i+'" data-cardio="'+i+'" data-f="min" inputmode="numeric" value="'+esc(c.min)+'"></div>'
+      + '<button type="button" class="ed" data-calc-del="'+i+'" aria-label="Remove" style="height:42px;padding:0 12px">×</button></div>').join("");
+
+  openSheet(
+    '<h3>Calculate my targets</h3><p class="lead">The more accurate your activity answers, the closer the estimate.</p>'
+    + '<div class="stack" id="calc">'
+    + '<h4>About you</h4>'
+    + '<div class="field"><label>Sex</label>'+seg("sex", [["m","Male"],["f","Female"]])+'</div>'
+    + '<div class="row2">'+inp("cAge","age","Age")+inp("cLb","lb","Weight (lb)")+'</div>'
+    + '<div class="row2">'+inp("cFt","ft","Height (ft)","5")+inp("cIn","inch","Height (in)","10")+'</div>'
+    + '<h4>Daily movement</h4>'
+    + '<div class="field"><label>Steps</label>'+seg("stepsMode", [["known","I know my daily steps"],["est","Estimate for me"]])+'</div>'
+    + '<div id="stepsKnown"'+(x.stepsMode==="known"?'':' hidden')+'>'+inp("cSteps","steps","Average steps per day","8000")
+    + '<p class="hint" style="margin-top:6px">Check the Health app for your weekly average. If it counts your runs, don\'t add them again as cardio.</p></div>'
+    + '<div id="stepsEst"'+(x.stepsMode==="est"?'':' hidden')+'>'+seg("onFeet", Object.entries(ON_FEET).map(([k,v]) => [k, v[0]]))+'</div>'
+    + '<h4>Lifting</h4>'
+    + '<div class="row2">'+inp("cLd","liftDays","Sessions / week")+inp("cLm","liftMin","Minutes / session")+'</div>'
+    + '<div class="field"><label>Intensity</label>'+seg("liftHard", [["true","Hard, short rests"],["false","Moderate, long rests"]])+'</div>'
+    + '<h4>Cardio</h4><div class="stack" id="cardioRows">'+cardioRows()+'</div>'
+    + '<button class="linkish" type="button" data-calc-add="1">+ Add cardio</button>'
+    + '<h4>Goal</h4>'
+    + seg("goal", Object.entries(GOALS).map(([k,v]) => [k, v.label]))
+    + '<div id="paceBox"></div>'
+    + '<div class="tile" id="calcOut" style="background:var(--paper);margin-top:6px"></div>'
+    + '<div class="field"><label for="cName">Save as profile</label><input id="cName" data-key="name" value="'+esc(x.name)+'" placeholder="Semester"></div>'
+    + '<p class="hint" style="margin-top:-4px">Give each season its own name, like Semester or Summer, and switch between them in Settings.</p>'
+    + '<p class="err" id="calcErr" hidden></p>'
+    + '<button class="btn primary" type="button" id="calcUse">Use these targets</button>'
+    + '<button class="linkish" type="button" data-act="open-settings">Back to settings</button>'
+    + '</div>');
+
+  const box = $("calc");
+  const renderPace = () => {
+    const g = GOALS[x.goal];
+    $("paceBox").innerHTML = g.paces ? '<div class="field" style="margin-top:4px"><label>Pace</label><div class="seg" role="group">'
+      + Object.entries(g.paces).map(([k, v]) => '<button type="button" data-calc="pace" data-v="'+k+'" aria-pressed="'+(x.pace===k)+'">'+v[1]+' ('+(v[0]>0?'+':'')+Math.round(v[0]*100)+'%)</button>').join("") + '</div></div>' : '';
+  };
+  const renderOut = () => {
+    const r = computeTargets(x);
+    const out = $("calcOut");
+    if (!r) { out.innerHTML = '<div class="of" style="font-size:14px">Fill in age, weight and height to see your numbers.</div>'; return; }
+    const row = (l, v, strong) => '<div style="display:flex;justify-content:space-between;gap:10px;font-size:14px;'+(strong?'font-weight:800;border-top:1px solid var(--line);padding-top:6px;margin-top:2px':'color:var(--muted)')+'"><span>'+l+'</span><span>'+v+'</span></div>';
+    const P = r.parts;
+    out.innerHTML = '<div style="display:flex;align-items:baseline;gap:8px"><span class="v" style="font-size:40px">'+fmt(r.kcal)+'</span><span class="of" style="font-size:14px">calories a day</span></div>'
+      + '<div style="display:flex;gap:14px;font-weight:800;margin:6px 0 10px"><span class="p">'+r.p+'g protein</span><span class="c">'+r.c+'g carbs</span><span class="f">'+r.f+'g fat</span></div>'
+      + row("Resting burn", fmt(P.resting)) + row("Daily living", "+" + fmt(P.living)) + row("Steps", "+" + fmt(P.steps))
+      + row("Lifting (daily avg)", "+" + fmt(P.lifting)) + row("Cardio (daily avg)", "+" + fmt(P.cardio))
+      + row("Maintenance", fmt(P.maintenance), true)
+      + (x.goal !== "maintain" && P.adjust ? row(GOALS[x.goal].label + " adjustment", (P.adjust > 0 ? "+" : "−") + fmt(Math.abs(P.adjust))) : '')
+      + (r.floored ? '<p class="hint" style="margin-top:8px">Your target was raised to your resting burn. Going lower than that isn\'t recommended without guidance from a doctor or dietitian.</p>' : '')
+      + '<p class="hint" style="margin-top:8px">This is an estimate. Weigh yourself a few times a week; if your weight isn\'t moving the way you want after 2–3 weeks, recalculate or adjust by about 150 calories.</p>';
+  };
+  const redraw = () => { renderPace(); renderOut(); };
+
+  box.addEventListener("input", e => {
+    const t = e.target;
+    if (t.dataset.key) x[t.dataset.key] = t.value;
+    else if (t.dataset.cardio !== undefined) x.cardio[Number(t.dataset.cardio)][t.dataset.f] = t.value;
+    renderOut();
+  });
+  box.addEventListener("change", e => {
+    const t = e.target;
+    if (t.dataset.cardio !== undefined) { x.cardio[Number(t.dataset.cardio)][t.dataset.f] = t.value; renderOut(); }
+  });
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.calc) {
+      let v = b.dataset.v; if (v === "true") v = true; else if (v === "false") v = false;
+      x[b.dataset.calc] = v;
+      b.parentElement.querySelectorAll("button").forEach(n => n.setAttribute("aria-pressed", String(n === b)));
+      if (b.dataset.calc === "stepsMode") { $("stepsKnown").hidden = v !== "known"; $("stepsEst").hidden = v !== "est"; }
+      if (b.dataset.calc === "goal") x.pace = "slow";
+      redraw();
+    } else if (b.dataset.calcAdd) {
+      if (x.cardio.length >= 5) return;
+      x.cardio.push({ type: "run", min: "60" });
+      $("cardioRows").innerHTML = cardioRows(); renderOut();
+    } else if (b.dataset.calcDel !== undefined) {
+      x.cardio.splice(Number(b.dataset.calcDel), 1);
+      $("cardioRows").innerHTML = cardioRows(); renderOut();
+    } else if (b.id === "calcUse") {
+      const r = computeTargets(x);
+      const err = $("calcErr");
+      if (!r) { err.textContent = "Fill in your age, weight and height first."; err.hidden = false; return; }
+      const name = (x.name || "").trim() || "My targets";
+      x.name = name;
+      DB.settings.calcInputs = { ...x, cardio: x.cardio.map(c => ({ ...c })) };
+      DB.profiles = DB.profiles || [];
+      let prof = DB.profiles.find(p => p.name.toLowerCase() === name.toLowerCase());
+      const targets = { kcal: r.kcal, p: r.p, c: r.c, f: r.f };
+      if (prof) { prof.inputs = DB.settings.calcInputs; prof.targets = targets; prof.name = name; }
+      else { prof = { id: "p" + uid(), name, inputs: DB.settings.calcInputs, targets }; DB.profiles.push(prof); }
+      DB.targets = targets; DB.activeProfile = prof.id;
+      save(); render(); showSettings(); toast(name + " targets set");
+    }
+  });
+  redraw();
+}
 
 /* --- typed barcode --- */
 function showTypeCode(lead){
@@ -645,6 +806,14 @@ document.addEventListener("click", e => {
   const act = b.dataset.act;
   if (act === "close") closeSheet();
   else if (act === "open-settings") showSettings();
+  else if (act === "open-calc") {
+    const prof = (DB.profiles || []).find(p => p.id === DB.activeProfile);
+    showCalculator(prof ? prof.inputs : null);
+  }
+  else if (act === "apply-profile") {
+    const prof = (DB.profiles || []).find(p => p.id === b.dataset.id);
+    if (prof) { DB.targets = { ...prof.targets }; DB.activeProfile = prof.id; DB.settings.calcInputs = prof.inputs; save(); render(); showSettings(); toast(prof.name + " targets set"); }
+  }
   else if (act === "new-food") showFoodForm({ code: (ctx.editing && ctx.editing.code) || "" }, { logAfter: true });
   else if (act === "pick") { const f = DB.foods[b.dataset.id]; if (f) showLog(f); }
   else if (act === "pick-db") { const f = DB.foods[b.dataset.id] || dbCache[b.dataset.id]; if (f) showLog(f); }
