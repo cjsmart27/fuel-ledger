@@ -237,25 +237,33 @@ function render(){
   const yest = keyOf(new Date(Date.now() - 864e5));
   const long = d.toLocaleDateString(undefined, {weekday:"short", month:"short", day:"numeric"});
   const list = dayEntries();
-  $("dateLabel").textContent = isToday ? "Today · " + long : date === yest ? "Yesterday · " + long : long;
+  const dayName = isToday ? "Today" : date === yest ? "Yesterday" : d.toLocaleDateString(undefined, {weekday:"long"});
+  $("dateLabel").textContent = dayName + " · " + d.toLocaleDateString(undefined, {month:"short", day:"numeric"});
   $("nextDay").disabled = isToday;
-  $("factsTitle").textContent = isToday ? "Today" : d.toLocaleDateString(undefined, {weekday:"long"});
-  $("factsSub").textContent = list.length + (list.length === 1 ? " item" : " items") + " logged · " + long;
 
   const t = totals(list), g = DB.targets;
-  $("calEaten").textContent = fmt(t.kcal);
   if (g && g.kcal) {
     const left = g.kcal - t.kcal;
-    $("calLeft").textContent = "of " + fmt(g.kcal) + " · " + (left >= 0 ? fmt(left) + " left" : fmt(-left) + " over");
-  } else $("calLeft").textContent = "Set targets to track what's left";
-  $("setCta").hidden = !!(g && g.kcal);
+    $("heroNum").textContent = fmt(Math.abs(left));
+    $("heroUnit").textContent = left >= 0 ? "calories left" : "calories over";
+    $("heroFill").style.width = Math.min(100, t.kcal / g.kcal * 100) + "%";
+    $("heroBar").hidden = false;
+    $("heroLeft").textContent = fmt(t.kcal) + " eaten";
+    $("heroRight").textContent = fmt(g.kcal) + " goal";
+  } else {
+    $("heroNum").textContent = fmt(t.kcal);
+    $("heroUnit").textContent = "calories eaten";
+    $("heroBar").hidden = true;
+    $("heroLeft").textContent = list.length + (list.length === 1 ? " item" : " items") + " logged";
+    $("heroRight").innerHTML = '<button type="button" data-act="open-settings">Set daily targets</button>';
+  }
 
-  $("macroRows").innerHTML = [["Protein","p","protein"],["Carbs","c","carbs"],["Fat","f","fat"]].map(([label,k,col]) => {
+  $("tiles").innerHTML = [["Protein","p","protein"],["Carbs","c","carbs"],["Fat","f","fat"]].map(([label,k,col]) => {
     const tgt = g && g[k] ? g[k] : 0;
-    const pct = tgt ? Math.round(t[k] / tgt * 100) : null;
-    return '<div class="mrow"><div><b>'+label+'</b><span class="amt">'+r1(t[k])+' g'+(tgt?' / '+tgt+' g':'')+'</span></div>'
-      + '<div class="pct">'+(pct===null?'—':pct+'%')+'</div>'
-      + '<div class="bar"><i style="width:'+Math.min(100, pct||0)+'%;background:var(--'+col+')"></i></div></div>';
+    const pct = tgt ? Math.min(100, t[k] / tgt * 100) : 0;
+    return '<div class="tile"><div class="v">'+r0(t[k])+'</div><div class="of">'+(tgt ? '/ '+tgt+' g' : 'grams')+'</div>'
+      + '<div class="k" style="color:var(--'+col+')">'+label+'</div>'
+      + (tgt ? '<div class="tb"><i style="width:'+pct+'%;background:var(--'+col+')"></i></div>' : '')+'</div>';
   }).join("");
 
   const host = $("meals");

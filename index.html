@@ -4,31 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Fuel Ledger</title>
-<meta name="theme-color" content="#1d6b45">
+<meta name="theme-color" content="#2343d8">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Fuel Ledger">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,400..900;1,62..125,400..900&display=swap">
 <style>
 /* Layout: one phone-width column. A Nutrition Facts–style panel sums up the day, meals below, actions pinned at the bottom. */
 :root{
-  --paper:#f6f7f3; --card:#ffffff; --ink:#151815; --muted:#5a635b; --line:#d7dcd4;
-  --accent:#1d6b45; --accent-ink:#ffffff; --scrim:rgba(10,14,11,.45);
-  --protein:#b0325a; --carbs:#a86f05; --fat:#2c68a8; --warn:#b42318;
+  --paper:#f3f4f2; --card:#ffffff; --ink:#111318; --muted:#6b7079; --line:#e4e5e8;
+  --accent:#2343d8; --accent-ink:#ffffff; --scrim:rgba(10,12,20,.45);
+  --hero:#2343d8; --hero-ink:#ffffff; --hero-muted:#c7d0ff; --hero-track:rgba(255,255,255,.22); --hero-fill:#ffffff;
+  --protein:#d6336c; --carbs:#d9850b; --fat:#1f8f84; --warn:#c42b1c;
   --font:"Archivo","Helvetica Neue",Arial,sans-serif;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0f120f; --card:#171b17; --ink:#e8ede7; --muted:#9aa49b; --line:#2b322c;
-    --accent:#5cc08c; --accent-ink:#06130b; --scrim:rgba(0,0,0,.6);
-    --protein:#ee7c9e; --carbs:#eeb543; --fat:#7aafec; --warn:#ff8a7a; color-scheme:dark;
+    --paper:#0d0e11; --card:#17191e; --ink:#eceef2; --muted:#9097a3; --line:#262931;
+    --accent:#6d86ff; --accent-ink:#0b1033; --scrim:rgba(0,0,0,.6);
+    --hero:#1b2c99; --hero-ink:#ffffff; --hero-muted:#b6c1ff; --hero-track:rgba(255,255,255,.18); --hero-fill:#ffffff;
+    --protein:#f0709a; --carbs:#f2b246; --fat:#4cc3b6; --warn:#ff8a7a; color-scheme:dark;
   }
 }
 *{box-sizing:border-box}
@@ -39,63 +41,58 @@ button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
 input{font-size:16px} /* stops iOS zooming into fields */
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.wrap{max-width:560px;margin:0 auto;padding-top:calc(12px + env(safe-area-inset-top,0px));padding-bottom:calc(120px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:14px}
-
+.hero{background:var(--hero);color:var(--hero-ink);padding-top:calc(10px + env(safe-area-inset-top,0px));padding-bottom:22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.hero .in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.wrap{max-width:560px;margin:0 auto;padding-top:14px;padding-bottom:calc(120px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.brand{font-weight:800;font-variation-settings:"wdth" 75;letter-spacing:.08em;text-transform:uppercase;font-size:13px}
-.ghost{background:none;border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600}
-.banner{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--muted)}
+.brand{font-weight:800;font-style:italic;font-variation-settings:"wdth" 80;letter-spacing:.06em;text-transform:uppercase;font-size:14px}
+.ghost{background:none;border:1px solid var(--hero-track);color:var(--hero-ink);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600}
+.banner{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:10px 12px;color:var(--muted)}
 .banner b{color:var(--ink)}
 .banner button{background:none;border:0;padding:0;color:var(--accent);font-weight:700;text-decoration:underline}
-
-.datebar{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.datebar button{background:none;border:1px solid var(--line);border-radius:10px;width:42px;height:38px;font-size:18px;font-weight:700}
-.datebar button:disabled{opacity:.35;cursor:default}
-.datebar .d{font-weight:700;text-align:center;flex:1}
-
-.facts{background:var(--card);border:2px solid var(--ink);padding:4px 10px 10px}
-.facts h1{margin:0;font-size:42px;line-height:1;font-weight:900;font-variation-settings:"wdth" 62;letter-spacing:-.01em}
-.facts .sub{font-size:13px;padding:2px 0 4px;border-bottom:1px solid var(--ink)}
-.r10{height:10px;background:var(--ink)}
-.r5{height:5px;background:var(--ink)}
-.cal{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:4px 0 2px}
-.cal .lbl{font-weight:900;font-size:22px;font-variation-settings:"wdth" 70}
-.cal .lbl small{display:block;font-size:12px;font-weight:600;font-variation-settings:"wdth" 100;color:var(--muted)}
-.cal .big{font-weight:900;font-size:46px;line-height:.95;font-variation-settings:"wdth" 70}
-.dvhead{display:flex;justify-content:flex-end;font-size:12px;font-weight:800;padding:3px 0;border-bottom:1px solid var(--ink)}
-.mrow{padding:6px 0 7px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:baseline}
-.mrow:last-child{border-bottom:0}
-.mrow b{font-weight:800}
-.mrow .amt{color:var(--muted);font-size:13.5px;margin-left:4px}
-.mrow .pct{font-weight:800}
-.bar{grid-column:1/-1;height:6px;background:var(--line);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;border-radius:3px;transition:width .3s}
-.setcta{margin-top:8px;font-size:13px;color:var(--muted)}
-.setcta button{background:none;border:0;padding:0;color:var(--accent);font-weight:700;text-decoration:underline}
-
-.meal h2{display:flex;justify-content:space-between;align-items:baseline;margin:6px 0 4px;font-size:13px;letter-spacing:.07em;text-transform:uppercase;font-weight:800}
+.datebar{display:flex;align-items:center;gap:6px}
+.datebar button{background:none;border:0;color:var(--hero-ink);width:30px;height:30px;border-radius:8px;font-size:20px;font-weight:700;line-height:1}
+.datebar button:disabled{opacity:.3;cursor:default}
+.datebar .d{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--hero-muted)}
+.big{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.big .n{font-size:60px;line-height:.9;font-weight:850;font-style:italic;font-variation-settings:"wdth" 82;letter-spacing:-.02em}
+.big .u{font-size:17px;font-weight:600;color:var(--hero-muted)}
+.hbar{height:8px;background:var(--hero-track);border-radius:4px;overflow:hidden}
+.hbar i{display:block;height:100%;background:var(--hero-fill);border-radius:4px;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+.hsub{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--hero-muted);font-weight:600}
+.hsub button{background:none;border:0;padding:0;color:var(--hero-ink);font-weight:700;text-decoration:underline}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.tile{background:var(--card);border-radius:16px;padding:12px 12px 11px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile .v{font-size:28px;line-height:1;font-weight:850;font-style:italic;font-variation-settings:"wdth" 82}
+.tile .of{font-size:12.5px;color:var(--muted);font-weight:600}
+.tile .k{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-top:6px}
+.tile .tb{height:4px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:6px}
+.tile .tb i{display:block;height:100%;border-radius:2px;transition:width .5s cubic-bezier(.2,.8,.2,1)}
+#meals{display:flex;flex-direction:column;gap:20px}
+.meal h2{display:flex;justify-content:space-between;align-items:baseline;margin:0 4px 6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:var(--accent)}
 .meal h2 span{font-weight:600;letter-spacing:0;text-transform:none;color:var(--muted)}
-.entries{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
-.entry{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.entries{list-style:none;margin:0;padding:0 14px;background:var(--card);border-radius:16px}
+.entry{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:4px 8px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line)}
+.entry:last-child{border-bottom:0}
 .entry .nm{font-weight:650;min-width:0;overflow-wrap:anywhere}
 .entry .nm small{display:block;font-weight:400;color:var(--muted);font-size:12.5px}
-.entry .kc{text-align:right;font-weight:800}
-.entry .kc small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.entry .kc{text-align:right;font-weight:850;font-style:italic;font-size:17px;font-variation-settings:"wdth" 85}
+.entry .kc small{display:block;font-style:normal;font-weight:500;font-variation-settings:"wdth" 100;font-size:11.5px;color:var(--muted);white-space:nowrap}
 .entry .x{background:none;border:0;color:var(--muted);font-size:20px;width:34px;height:34px;border-radius:8px}
 .p{color:var(--protein)} .c{color:var(--carbs)} .f{color:var(--fat)}
-.empty{border:1.5px dashed var(--line);border-radius:12px;padding:22px 16px;text-align:center;color:var(--muted)}
+.empty{border:1.5px dashed var(--line);border-radius:16px;padding:22px 16px;text-align:center;color:var(--muted)}
 .empty b{display:block;color:var(--ink);margin-bottom:4px}
 
-.actions{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));z-index:5}
+.actions{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:0;padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));z-index:5}
 .actions .in{max-width:560px;margin:0 auto;display:grid;grid-template-columns:1.4fr 1fr;gap:10px}
-.btn{border:1.5px solid var(--ink);background:var(--card);border-radius:12px;padding:12px 14px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
-.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn{border:1.5px solid var(--line);background:var(--card);border-radius:999px;padding:12px 14px;font-weight:750;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-style:italic;font-weight:800}
 .btn:disabled{opacity:.5;cursor:default}
 .btn svg{width:20px;height:20px;flex:none}
 
 .scrim{position:fixed;inset:0;background:var(--scrim);z-index:20}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:560px;margin:0 auto;background:var(--card);border-top:2px solid var(--ink);border-radius:16px 16px 0 0;max-height:90%;overflow:auto;-webkit-overflow-scrolling:touch;padding-top:16px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.sheet h3{margin:0 0 4px;font-size:24px;font-weight:900;font-variation-settings:"wdth" 70;text-wrap:balance;overflow-wrap:anywhere}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:560px;margin:0 auto;background:var(--card);border-top:0;border-radius:22px 22px 0 0;max-height:90%;overflow:auto;-webkit-overflow-scrolling:touch;padding-top:16px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet h3{margin:0 0 4px;font-size:25px;font-weight:850;font-style:italic;font-variation-settings:"wdth" 82;text-wrap:balance;overflow-wrap:anywhere}
 .sheet h4{margin:8px 0 2px;font-size:12px;letter-spacing:.07em;text-transform:uppercase;font-weight:800;color:var(--muted)}
 .sheet .lead{margin:0 0 14px;color:var(--muted)}
 .stack{display:flex;flex-direction:column;gap:10px}
@@ -110,9 +107,9 @@ input{font-size:16px} /* stops iOS zooming into fields */
 .stepper{display:flex;align-items:center;gap:8px}
 .stepper button{width:44px;height:44px;border-radius:10px;border:1.5px solid var(--line);background:var(--paper);font-size:20px;font-weight:700}
 .stepper input{text-align:center;width:96px}
-.preview{border:2px solid var(--ink);padding:8px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center}
+.preview{background:var(--paper);border-radius:14px;padding:8px 10px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center}
 .preview div{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
-.preview b{display:block;font-size:20px;font-weight:900;color:var(--ink);letter-spacing:0;font-variation-settings:"wdth" 75}
+.preview b{display:block;font-size:22px;font-weight:850;font-style:italic;color:var(--ink);letter-spacing:0;font-variation-settings:"wdth" 75}
 .code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--muted)}
 .results{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
 .results li{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
@@ -140,34 +137,27 @@ input{font-size:16px} /* stops iOS zooming into fields */
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <div class="brand">Fuel Ledger</div>
-    <button class="ghost" id="settingsBtn" type="button">Settings</button>
-  </div>
-  <div class="banner" id="installBanner" hidden></div>
-
-  <div class="datebar">
-    <button type="button" id="prevDay" aria-label="Previous day">‹</button>
-    <div class="d" id="dateLabel">Today</div>
-    <button type="button" id="nextDay" aria-label="Next day">›</button>
-  </div>
-
-  <section class="facts" aria-label="Daily totals">
-    <h1 id="factsTitle">Today</h1>
-    <div class="sub" id="factsSub">0 items logged</div>
-    <div class="r10"></div>
-    <div class="cal">
-      <div class="lbl">Calories<small id="calLeft">Set targets to track what's left</small></div>
-      <div class="big" id="calEaten">0</div>
+<header class="hero">
+  <div class="in">
+    <div class="top">
+      <div class="brand">Fuel Ledger</div>
+      <button class="ghost" id="settingsBtn" type="button">Settings</button>
     </div>
-    <div class="r5"></div>
-    <div class="dvhead">% Target</div>
-    <div id="macroRows"></div>
-    <div class="setcta" id="setCta" hidden>No daily targets yet. <button type="button" data-act="open-settings">Set calories and macros</button></div>
-  </section>
+    <div class="datebar">
+      <button type="button" id="prevDay" aria-label="Previous day">‹</button>
+      <div class="d" id="dateLabel">Today</div>
+      <button type="button" id="nextDay" aria-label="Next day">›</button>
+    </div>
+    <div class="big"><span class="n" id="heroNum">0</span><span class="u" id="heroUnit">calories eaten</span></div>
+    <div class="hbar" id="heroBar"><i id="heroFill" style="width:0%"></i></div>
+    <div class="hsub"><span id="heroLeft">0 eaten</span><span id="heroRight"></span></div>
+  </div>
+</header>
 
-  <div id="meals"></div>
+<div class="wrap">
+  <div class="banner" id="installBanner" hidden></div>
+  <div class="tiles" id="tiles"></div>
+<div id="meals"></div>
 </div>
 
 <div class="actions">

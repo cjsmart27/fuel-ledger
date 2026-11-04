@@ -1,5 +1,5 @@
 // Fuel Ledger service worker: keeps the app usable offline.
-const VERSION = "fuel-ledger-v1";
+const VERSION = "fuel-ledger-v2";
 const SHELL = [
   "./",
   "./index.html",
