@@ -120,6 +120,22 @@ input{font-size:16px} /* stops iOS zooming into fields */
 .results .src{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 4px;margin-left:4px}
 .spin{width:28px;height:28px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;margin:10px auto}
 @keyframes sp{to{transform:rotate(360deg)}}
+.teditor{background:var(--paper);border-radius:16px;padding:4px 12px}
+.trow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.trow:last-child{border-bottom:0}
+.trow .tl{display:flex;flex-direction:column;min-width:0}
+.trow .tl b{font-weight:800}
+.trow .tl small{font-size:12px;color:var(--muted)}
+.tctl{display:flex;align-items:center;gap:6px}
+.tctl input{width:64px;text-align:center;border:1.5px solid var(--line);background:var(--card);border-radius:10px;padding:8px 4px;font-weight:800;font-style:italic}
+.tctl input:focus{border-color:var(--accent);outline:none}
+.tu{font-size:12px;color:var(--muted);width:26px}
+.tstep{width:34px;height:34px;border-radius:999px;border:1.5px solid var(--line);background:var(--card);font-size:18px;font-weight:700;line-height:1}
+.tlock,.tlock-sp{width:34px;height:34px;flex:none}
+.tlock{border-radius:999px;border:1.5px solid var(--line);background:none;color:var(--muted);display:flex;align-items:center;justify-content:center}
+.tlock[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+.tkeep{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600}
+.tkeep input{width:18px;height:18px;accent-color:var(--accent)}
 .err{color:var(--warn);font-size:13.5px;margin:0}
 .linkish{background:none;border:0;padding:4px 0;color:var(--accent);font-weight:700;text-decoration:underline;text-align:left}
 .hint{font-size:12.5px;color:var(--muted);margin:0}

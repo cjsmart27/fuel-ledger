@@ -435,6 +435,113 @@ async function runDbSearch(q){
 }
 
 /* --- settings --- */
+/* --- target editor: change one number, the rest rebalance --- */
+const KCAL_PER_G = { p: 4, c: 4, f: 9 };
+const MACRO_META = [["p","Protein","protein",5],["c","Carbs","carbs",5],["f","Fat","fat",2]];
+// Returns a new {kcal,p,c,f} after one field changes, plus a note when the request couldn't be met exactly.
+function rebalance(base, field, val, locks, keepCal){
+  const t = { ...base, [field]: Math.max(0, Math.round(val)) };
+  const macroKcal = x => x.p*4 + x.c*4 + x.f*9;
+  if (field === "kcal") {
+    const free = ["p","c","f"].filter(k => !locks[k]);
+    const fixed = ["p","c","f"].filter(k => locks[k]).reduce((s,k) => s + t[k]*KCAL_PER_G[k], 0);
+    let room = t.kcal - fixed;
+    if (!free.length) return { t: { ...t, kcal: macroKcal(t) }, note: "All macros are locked, so calories follow them." };
+    if (room < 0) { free.forEach(k => t[k] = 0); return { t: { ...t, kcal: fixed }, note: "Locked macros already need " + fmt(fixed) + " kcal, so calories can't go lower." }; }
+    const cur = free.reduce((s,k) => s + base[k]*KCAL_PER_G[k], 0);
+    free.forEach(k => { const share = cur ? base[k]*KCAL_PER_G[k] / cur : 1/free.length; t[k] = Math.round(room * share / KCAL_PER_G[k]); });
+    fixRounding(t, free);
+    return { t, note: "" };
+  }
+  if (!keepCal) return { t: { ...t, kcal: macroKcal(t) }, note: "" };
+  const others = ["p","c","f"].filter(k => k !== field && !locks[k]);
+  if (!others.length) return { t: { ...t, kcal: macroKcal(t) }, note: "The other macros are locked, so calories changed instead." };
+  const need = (t[field] - base[field]) * KCAL_PER_G[field];        // kcal the others must give up (or receive)
+  const pool = others.reduce((s,k) => s + base[k]*KCAL_PER_G[k], 0);
+  let note = "";
+  if (need > pool) {                                                // not enough left to take from
+    others.forEach(k => t[k] = 0);
+    t.kcal = macroKcal(t);
+    note = "There wasn't enough left in " + others.map(k => MACRO_META.find(m => m[0]===k)[1].toLowerCase()).join(" and ") + ", so calories went up.";
+    return { t, note };
+  }
+  others.forEach(k => {
+    const share = pool ? base[k]*KCAL_PER_G[k] / pool : 1/others.length;
+    t[k] = Math.max(0, Math.round((base[k]*KCAL_PER_G[k] - need*share) / KCAL_PER_G[k]));
+  });
+  fixRounding(t, others);
+  return { t, note };
+}
+function fixRounding(t, adjustable){
+  // Nudge one adjustable macro so the macros land within a few kcal of the calorie target.
+  const prefer = ["c","p","f"].filter(k => adjustable.includes(k));
+  if (!prefer.length) return;
+  const k = prefer[0];
+  const diff = t.kcal - (t.p*4 + t.c*4 + t.f*9);
+  t[k] = Math.max(0, t[k] + Math.round(diff / KCAL_PER_G[k]));
+}
+function targetEditorHTML(g){
+  const lockSvg = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
+  const row = (key, label, col, step, val, unit) =>
+    '<div class="trow" data-row="'+key+'"><div class="tl"><b'+(col?' style="color:var(--'+col+')"':'')+'>'+label+'</b><small id="tPct_'+key+'"></small></div>'
+    + '<div class="tctl"><button type="button" class="tstep" data-tstep="'+key+'" data-d="-'+step+'" aria-label="Less '+label+'">−</button>'
+    + '<input id="t_'+key+'" data-tkey="'+key+'" inputmode="numeric" value="'+(val||"")+'" aria-label="'+label+' '+unit+'"><span class="tu">'+unit+'</span>'
+    + '<button type="button" class="tstep" data-tstep="'+key+'" data-d="'+step+'" aria-label="More '+label+'">+</button>'
+    + (key === "kcal" ? '<span class="tlock-sp"></span>' : '<button type="button" class="tlock" data-tlock="'+key+'" aria-pressed="false" aria-label="Lock '+label+'">'+lockSvg+'</button>')
+    + '</div></div>';
+  return '<div class="teditor">'
+    + row("kcal","Calories","",50,g.kcal,"kcal")
+    + MACRO_META.map(([k,l,col,st]) => row(k,l,col,st,g[k],"g")).join("")
+    + '</div>'
+    + '<label class="tkeep"><input type="checkbox" id="tKeep" checked> Keep calories the same when I change a macro</label>'
+    + '<p class="hint" id="tHint"></p>';
+}
+function wireTargetEditor(g){
+  let t = { kcal: num(g.kcal), p: num(g.p), c: num(g.c), f: num(g.f) };
+  const locks = { p: false, c: false, f: false };
+  let base = null, note = "";
+  const paint = (skip) => {
+    ["kcal","p","c","f"].forEach(k => { const el = $("t_"+k); if (el && k !== skip) el.value = t[k] ? String(t[k]) : ""; });
+    const m = t.p*4 + t.c*4 + t.f*9;
+    MACRO_META.forEach(([k]) => { const el = $("tPct_"+k); if (el) el.textContent = m ? Math.round(t[k]*KCAL_PER_G[k]/m*100) + "% of calories" : ""; });
+    const diff = m - t.kcal;
+    const status = !m ? "Protein and carbs are 4 kcal per gram, fat is 9."
+      : !t.kcal ? "Your macros add up to " + fmt(m) + " kcal."
+      : Math.abs(diff) <= 10 ? "Macros add up to " + fmt(m) + " kcal, matching your calorie target."
+      : "Macros add up to " + fmt(m) + " kcal (" + fmt(Math.abs(diff)) + (diff > 0 ? " above" : " below") + " your calorie target).";
+    $("tHint").textContent = note ? note + " " + status : status;
+  };
+  const apply = (key, val, skip) => {
+    if (!base) base = { ...t };
+    const keep = $("tKeep").checked;
+    const blank = !base.kcal && !base.p && !base.c && !base.f;
+    if (blank && key !== "kcal") { t = { ...t, [key]: Math.max(0, Math.round(val)) }; t.kcal = t.p*4 + t.c*4 + t.f*9; note = ""; }
+    else { const r = rebalance(base, key, val, locks, keep); t = r.t; note = r.note; }
+    paint(skip);
+  };
+  const box = document.querySelector(".teditor");
+  box.addEventListener("focusin", e => { if (e.target.dataset.tkey) base = { ...t }; });
+  box.addEventListener("input", e => { const k = e.target.dataset.tkey; if (k) apply(k, num(e.target.value), k); });
+  box.addEventListener("focusout", e => { if (e.target.dataset.tkey) { base = null; paint(); } });
+  box.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.tstep) {
+      const k = b.dataset.tstep;
+      base = { ...t };
+      apply(k, t[k] + Number(b.dataset.d));
+      base = null;
+    } else if (b.dataset.tlock) {
+      const k = b.dataset.tlock;
+      locks[k] = !locks[k];
+      b.setAttribute("aria-pressed", String(locks[k]));
+      b.closest(".trow").classList.toggle("locked", locks[k]);
+    }
+  });
+  $("tKeep").addEventListener("change", () => { note = ""; paint(); });
+  paint();
+  return { value: () => ({ kcal: r0(t.kcal), p: r0(t.p), c: r0(t.c), f: r0(t.f) }) };
+}
+
 function showSettings(){
   const g = DB.targets || {};
   const s = DB.settings;
@@ -451,11 +558,7 @@ function showSettings(){
         : '')
     + '<button class="btn" type="button" data-act="open-calc">'+(DB.profiles && DB.profiles.length ? 'Recalculate my targets' : 'Calculate my targets')+'</button>'
     + '<p class="hint">Answer a few questions about your body and activity, or type your own numbers below.</p>'
-    + '<div class="field"><label for="tK">Calories</label><input id="tK" inputmode="numeric" value="'+(g.kcal||"")+'"></div>'
-    + '<div class="row2"><div class="field"><label for="tP">Protein (g)</label><input id="tP" inputmode="numeric" value="'+(g.p||"")+'"></div>'
-    + '<div class="field"><label for="tC">Carbs (g)</label><input id="tC" inputmode="numeric" value="'+(g.c||"")+'"></div></div>'
-    + '<div class="field"><label for="tF">Fat (g)</label><input id="tF" inputmode="numeric" value="'+(g.f||"")+'"></div>'
-    + '<p class="hint" id="tHint"></p>'
+    + targetEditorHTML(g)
     + '<h4>USDA search key</h4>'
     + '<div class="field"><label for="uKey">API key (optional)</label><input id="uKey" value="'+esc(s.usdaKey||"")+'" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Using the shared demo key"></div>'
     + '<p class="hint">The shared demo key allows only a few dozen searches an hour. A free personal key from <a href="https://fdc.nal.usda.gov/api-key-signup.html" target="_blank" rel="noopener" style="color:var(--accent)">fdc.nal.usda.gov</a> removes that limit.</p>'
@@ -467,19 +570,10 @@ function showSettings(){
     + '<div class="row2"><button class="btn" type="button" data-act="export">Save backup</button><button class="btn" type="button" data-act="import">Restore backup</button></div>'
     + '<button class="linkish" type="button" data-act="close">Close</button>'
     + '</div>');
-  const hint = () => {
-    const p=num($("tP").value), c=num($("tC").value), f=num($("tF").value), k=num($("tK").value);
-    const m = r0(p*4 + c*4 + f*9);
-    const diff = m - k;
-    $("tHint").textContent = !m ? "Protein and carbs are 4 kcal per gram, fat is 9."
-      : !k ? "Your macros add up to " + fmt(m) + " kcal."
-      : Math.abs(diff) <= 10 ? "Your macros add up to " + fmt(m) + " kcal, matching your calorie target."
-      : "Your macros add up to " + fmt(m) + " kcal (" + fmt(Math.abs(diff)) + (diff > 0 ? " above" : " below") + " your calorie target).";
-  };
-  ["tK","tP","tC","tF"].forEach(id => $(id).addEventListener("input", hint)); hint();
+  const editor = wireTargetEditor(g);
   $("tForm").addEventListener("submit", ev => {
     ev.preventDefault();
-    const t = { kcal: r0(num($("tK").value)), p: r0(num($("tP").value)), c: r0(num($("tC").value)), f: r0(num($("tF").value)) };
+    const t = editor.value();
     const prev = DB.targets || {};
     if (t.kcal !== prev.kcal || t.p !== prev.p || t.c !== prev.c || t.f !== prev.f) DB.activeProfile = null;   // hand-edited numbers no longer match a profile
     DB.targets = t.kcal || t.p || t.c || t.f ? t : null;
